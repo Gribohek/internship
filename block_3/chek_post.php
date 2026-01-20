@@ -1,35 +1,38 @@
 <?php
-$name = $_POST['username'];
-$age = $_POST['age'];
-$gender = $_POST['gender'];
-$email = $_POST['email'];
-$password = $_POST['password'];
 
-if (trim($name) == "")
+$name = trim($_POST['username'] ?? '');
+$age = (int)($_POST['age'] ?? 0);
+$gender = $_POST['gender'] ?? '';
+$email = trim($_POST['email'] ?? '');
+$password = trim($_POST['password'] ?? '');
+
+if ($name === '') {
     echo "Вы не ввели имя";
-else if (strlen($name) <= 1)
+} elseif (strlen($name) <= 1) {
     echo "Такого имени не существует";
-if (trim($email) == "")
+} elseif ($email === '') {
     echo "Вы не ввели email";
-if (trim($password) == "")
+} elseif ($password === '') {
     echo "Вы не ввели пароль";
-else if (strlen($password) < 4)
-    echo "Длина пароля должна быть не меншье 4 символов";
-else {
-    if ($gender == "male") {
+} elseif (strlen($password) < 4) {
+    echo "Длина пароля должна быть не меньше 4 символов";
+} else {
+    $safeAge = htmlspecialchars((string)$age, ENT_QUOTES, 'UTF-8');
+
+    if ($gender === "male") {
         if ($age < 18)
-            echo "Вы юноша $age лет";
-        else if ($age < 60)
-            echo "Вы мужчина $age лет";
+            echo "Вы юноша $safeAge лет";
+        elseif ($age < 60)
+            echo "Вы мужчина $safeAge лет";
         else
-            echo "Вы пенсионер $age лет";
+            echo "Вы пенсионер $safeAge лет";
     } else {
         if ($age < 18)
-            echo "Вы девочка $age лет";
-        else if ($age < 60)
-            echo "Вы девушка $age лет";
+            echo "Вы девочка $safeAge лет";
+        elseif ($age < 60)
+            echo "Вы девушка $safeAge лет";
         else
-            echo "Вы пенсионерка $age лет";
+            echo "Вы пенсионерка $safeAge лет";
     }
 }
-$password = md5($password);
+$passwordHash = password_hash($password, PASSWORD_DEFAULT);
