@@ -7,7 +7,7 @@ class Controller{
     }
 
     protected function redirect($url){
-        header("Location:".BASE_URL."/$url");
+        header("");
         exit;
     }
 }
