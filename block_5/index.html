@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Test</title>
+  </head>
+  <body>
+    <script>
+      let lenght = Math.floor(Math.random() * 100) + 1;
+      let team = "";
+      let dangerous = 1;
+      for (i = 1; i < lenght; i++) {
+        team += Math.round(Math.random());
+      }
+      for (i = 0; i < team.length; i++) {
+        if (team[i] == team[i + 1]) {
+          dangerous++;
+          if (dangerous >= 7) break;
+        } else dangerous = 1;
+      }
+      alert(team);
+      if (dangerous < 7) alert("NO");
+      else alert("Yes");
+    </script>
+  </body>
+</html>
