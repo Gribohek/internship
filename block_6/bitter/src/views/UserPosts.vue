@@ -87,14 +87,6 @@ export default {
       },
     );
 
-    watch(
-      () => props.username || route.params.username,
-      () => {
-        loading.value = true;
-        setTimeout(loadPosts, 100);
-      },
-    );
-
     onMounted(loadPosts);
 
     return {
