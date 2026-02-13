@@ -1,43 +1,43 @@
 <template>
   <div class="post">
     <div class="post-header">
-      <span class="author">@{{ post.author.username }}</span>
+      <router-link :to="`/posts/${post.author.username}`" class="author">
+        @{{ post.author.username }}
+      </router-link>
       <span class="time">{{ formatTime(post.created_at) }}</span>
     </div>
 
-    <div class="post-content">{{ post.content }}</div>
+    <div class="post-content">
+      <template v-for="(segment, index) in parsedContent" :key="index">
+        <router-link
+          v-if="segment.type === 'mention'"
+          :to="`/posts/${segment.value}`"
+          class="mention-link"
+        >
+          @{{ segment.value }}
+        </router-link>
 
-    <div v-if="post.mentions.length" class="post-tags">
-      <span>Упомянуты: </span>
-      <span
-        v-for="mention in post.mentions"
-        :key="mention"
-        class="tag mention"
-        @click="$router.push(`/${mention}`)"
-      >
-        @{{ mention }}
-      </span>
-    </div>
+        <router-link
+          v-else-if="segment.type === 'hashtag'"
+          :to="`/hash/${segment.value}`"
+          class="hashtag-link"
+        >
+          #{{ segment.value }}
+        </router-link>
 
-    <div v-if="post.hashtags.length" class="post-tags">
-      <span>Хэштеги: </span>
-      <span
-        v-for="tag in post.hashtags"
-        :key="tag"
-        class="tag hashtag"
-        @click="$router.push(`/hash/${tag}`)"
-      >
-        #{{ tag }}
-      </span>
+        <span v-else v-html="segment.value"></span>
+      </template>
     </div>
   </div>
 </template>
 
 <script>
+import { computed } from "vue";
+
 export default {
   props: ["post"],
-  methods: {
-    formatTime(timestamp) {
+  setup(props) {
+    const formatTime = (timestamp) => {
       return new Date(timestamp).toLocaleString("ru-RU", {
         day: "2-digit",
         month: "2-digit",
@@ -45,18 +45,73 @@ export default {
         hour: "2-digit",
         minute: "2-digit",
       });
-    },
+    };
+
+    const parsedContent = computed(() => {
+      const segments = [];
+      let remaining = props.post.content;
+
+      // ПРОСТОЕ РЕШЕНИЕ: @ или #, затем любые символы кроме пробела
+      const regex = /(@[^\s]+|#[^\s]+)/g;
+      let lastIndex = 0;
+      let match;
+
+      while ((match = regex.exec(remaining)) !== null) {
+        if (match.index > lastIndex) {
+          segments.push({
+            type: "text",
+            value: remaining
+              .substring(lastIndex, match.index)
+              .replace(/\n/g, "<br>"),
+          });
+        }
+
+        const fullMatch = match[0];
+        if (fullMatch.startsWith("@")) {
+          segments.push({
+            type: "mention",
+            value: fullMatch.substring(1),
+          });
+        } else if (fullMatch.startsWith("#")) {
+          segments.push({
+            type: "hashtag",
+            value: fullMatch.substring(1),
+          });
+        }
+
+        lastIndex = match.index + fullMatch.length;
+      }
+
+      if (lastIndex < remaining.length) {
+        segments.push({
+          type: "text",
+          value: remaining.substring(lastIndex).replace(/\n/g, "<br>"),
+        });
+      }
+
+      return segments;
+    });
+
+    return {
+      formatTime,
+      parsedContent,
+    };
   },
 };
 </script>
 
 <style scoped>
 .post {
-  border: 1px solid #ddd;
+  border: 1px solid #e1e8ed;
   padding: 15px;
   margin-bottom: 15px;
-  border-radius: 5px;
+  border-radius: 8px;
   background: white;
+  transition: background 0.2s;
+}
+
+.post:hover {
+  background: #fafbfc;
 }
 
 .post-header {
@@ -68,42 +123,42 @@ export default {
 
 .author {
   font-weight: bold;
-  color: #333;
+  color: #1da1f2;
+  cursor: pointer;
+}
+
+.author:hover {
+  text-decoration: underline;
 }
 
 .time {
-  color: #777;
+  color: #657786;
 }
 
 .post-content {
-  margin-bottom: 10px;
-  line-height: 1.4;
+  line-height: 1.5;
   white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 15px;
 }
 
-.post-tags {
-  margin-top: 8px;
-  font-size: 13px;
-  color: #666;
-}
-
-.tag {
-  margin-left: 5px;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 3px;
-}
-
-.mention {
+/* Стили для ссылок внутри текста */
+::v-deep .mention-link {
   color: #1da1f2;
+  font-weight: 500;
+  cursor: pointer;
 }
 
-.hashtag {
-  color: #17bf63;
-}
-
-.tag:hover {
+::v-deep .mention-link:hover {
   text-decoration: underline;
-  background: #f5f8fa;
+}
+
+::v-deep .hashtag-link {
+  color: #1da1f2;
+  cursor: pointer;
+}
+
+::v-deep .hashtag-link:hover {
+  text-decoration: underline;
 }
 </style>

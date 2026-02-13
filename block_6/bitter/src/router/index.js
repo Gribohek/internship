@@ -4,12 +4,28 @@ import UserPosts from "../views/UserPosts.vue";
 import HashtagPosts from "../views/HashtagPosts.vue";
 
 const routes = [
-  { path: "/", component: Home },
-  { path: "/:username", component: UserPosts, props: true },
-  { path: "/hash/:hashtag", component: HashtagPosts, props: true },
+  {
+    path: "/",
+    name: "Home",
+    component: Home,
+  },
+  {
+    path: "/posts/:username",
+    name: "UserPosts",
+    component: UserPosts,
+    props: true,
+  },
+  {
+    path: "/hash/:hashtag",
+    name: "HashtagPosts",
+    component: HashtagPosts,
+    props: true,
+  },
 ];
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes,
 });
+
+export default router;
