@@ -4,6 +4,9 @@
       v-model="content"
       placeholder="Напишите пост"
       maxlength="280"
+      :disabled="loading"
+      @keydown.ctrl.enter="submitPost"
+      @keydown.meta.enter="submitPost"
     ></textarea>
 
     <div class="controls">
@@ -12,17 +15,23 @@
         {{ loading ? "Отправка..." : "Опубликовать" }}
       </button>
     </div>
+
+    <div v-if="error" class="error-message">
+      {{ error }}
+    </div>
   </div>
 </template>
 
 <script>
 import { ref, computed } from "vue";
+import api from "../services/api";
 
 export default {
-  emits: ["post-created"],
+  emits: ["post-submited"],
   setup(_, { emit }) {
     const content = ref("");
     const loading = ref(false);
+    const error = ref(null);
 
     const charsLeft = computed(() => 280 - content.value.length);
     const canSubmit = computed(
@@ -33,48 +42,42 @@ export default {
       if (!canSubmit.value) return;
 
       loading.value = true;
+      error.value = null;
 
-      const mentions =
-        content.value.match(/@(\w+)/g)?.map((m) => m.slice(1)) || [];
-      const hashtags =
-        content.value.match(/#(\w+)/g)?.map((h) => h.slice(1)) || [];
-
-      const newPost = {
-        id: Date.now(),
-        content: content.value,
-        author: { username: "current_user" },
-        created_at: new Date().toISOString(),
-        mentions,
-        hashtags,
-      };
-
-      emit("post-created", newPost);
-      content.value = "";
-      loading.value = false;
+      try {
+        const response = await api.createPost(content.value);
+        emit("post-submited", response);
+        content.value = "";
+      } catch (err) {
+        error.value = "Не удалось опубликовать пост. Попробуйте снова.";
+      } finally {
+        loading.value = false;
+      }
     };
 
-    return { content, loading, charsLeft, canSubmit, submitPost };
+    return { content, loading, charsLeft, canSubmit, submitPost, error };
   },
 };
 </script>
 
 <style scoped>
 .post-form {
-  border: 1px solid #ddd;
+  border: 1px solid #e1e8ed;
   padding: 15px;
-  border-radius: 5px;
+  border-radius: 8px;
   background: white;
 }
 
 textarea {
   width: 100%;
-  min-height: 80px;
+  min-height: 100px;
   padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 3px;
-  font-size: 14px;
+  border: 1px solid #e1e8ed;
+  border-radius: 4px;
+  font-size: 16px;
   resize: vertical;
   margin-bottom: 10px;
+  font-family: inherit;
 }
 
 textarea:focus {
@@ -88,10 +91,6 @@ textarea:focus {
   align-items: center;
 }
 
-.text-red {
-  color: #e0245e;
-}
-
 .btn {
   background: #1da1f2;
   color: white;
@@ -100,14 +99,28 @@ textarea:focus {
   border-radius: 20px;
   cursor: pointer;
   font-weight: bold;
+  transition: background 0.2s;
+}
+
+.btn:hover:not(:disabled) {
+  background: #0d8bf0;
 }
 
 .btn:disabled {
-  background: #ccc;
+  background: #9bd1f9;
   cursor: not-allowed;
 }
 
-.btn:not(:disabled):hover {
-  background: #0d8bf0;
+.text-red {
+  color: #e0245e;
+}
+
+.error-message {
+  margin-top: 10px;
+  padding: 8px;
+  background: #ffebee;
+  color: #c62828;
+  border-radius: 4px;
+  font-size: 14px;
 }
 </style>

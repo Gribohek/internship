@@ -4,10 +4,19 @@
 
     <div v-if="loading" class="status-message">Загрузка...</div>
     <div v-else-if="!posts.length" class="status-message">
-      Нет постов в ленте
+      Нет постов в ленте. Подпишитесь на пользователей!
     </div>
-    <div v-else class="posts-list">
-      <PostItem v-for="post in posts" :key="post.id" :post="post" />
+    <div v-else>
+      <PostItem
+        v-for="post in posts"
+        :key="post.id"
+        :post="post"
+        :show-follow-button="post.user.username !== 'current_user'"
+      />
+
+      <div v-if="hasMorePages" class="load-more">
+        <button @click="loadMore" class="load-more-btn">Загрузить еще</button>
+      </div>
     </div>
   </div>
 </template>
@@ -15,25 +24,7 @@
 <script>
 import { ref, onMounted, watch } from "vue";
 import PostItem from "../components/PostItem.vue";
-
-const mockPosts = [
-  {
-    id: 1,
-    content: "Привет всем! Это мой первый пост @testuser #первыйпост",
-    author: { username: "current_user" },
-    created_at: "2024-01-15T10:30:00Z",
-    mentions: ["testuser"],
-    hashtags: ["первыйпост"],
-  },
-  {
-    id: 2,
-    content: "Сегодня отличный день для программирования! #код #vue",
-    author: { username: "developer" },
-    created_at: "2024-01-15T09:15:00Z",
-    mentions: [],
-    hashtags: ["код", "vue"],
-  },
-];
+import api from "../services/api";
 
 export default {
   components: { PostItem },
@@ -41,13 +32,37 @@ export default {
   setup(props) {
     const posts = ref([]);
     const loading = ref(true);
+    const currentPage = ref(1);
+    const lastPage = ref(1);
+    const hasMorePages = ref(false);
 
-    const loadPosts = () => {
-      posts.value = [...mockPosts];
-      loading.value = false;
+    const loadFeed = async (page = 1) => {
+      loading.value = true;
+      try {
+        const response = await api.getFeed(page);
+        const newPosts = response.data;
+
+        if (page === 1) {
+          posts.value = newPosts;
+        } else {
+          posts.value = [...posts.value, ...newPosts];
+        }
+
+        currentPage.value = response.current_page;
+        lastPage.value = response.last_page;
+        hasMorePages.value = currentPage.value < lastPage.value;
+      } catch (error) {
+        console.error("Ошибка загрузки ленты:", error);
+      } finally {
+        loading.value = false;
+      }
     };
 
-    onMounted(loadPosts);
+    const loadMore = () => {
+      if (hasMorePages.value) {
+        loadFeed(currentPage.value + 1);
+      }
+    };
 
     watch(
       () => props.newPost,
@@ -58,7 +73,16 @@ export default {
       },
     );
 
-    return { posts, loading };
+    onMounted(() => {
+      loadFeed();
+    });
+
+    return {
+      posts,
+      loading,
+      hasMorePages,
+      loadMore,
+    };
   },
 };
 </script>
@@ -79,7 +103,23 @@ export default {
   border-radius: 8px;
 }
 
-.posts-list {
-  margin-top: 10px;
+.load-more {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.load-more-btn {
+  background: white;
+  border: 1px solid #1da1f2;
+  color: #1da1f2;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.load-more-btn:hover {
+  background: #e8f5fe;
 }
 </style>

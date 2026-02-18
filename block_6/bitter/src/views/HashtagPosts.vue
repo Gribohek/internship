@@ -1,13 +1,21 @@
 <template>
   <div class="hashtag-posts">
-    <h2 class="page-title">#{{ hashtag }}</h2>
+    <div class="hashtag-header">
+      <h2 class="page-title">#{{ displayHashtag }}</h2>
+      <span class="posts-count">{{ totalPosts }} постов</span>
+    </div>
 
     <div v-if="loading" class="status-message">Загрузка...</div>
+    <div v-else-if="error" class="status-message error">{{ error }}</div>
     <div v-else-if="!posts.length" class="status-message">
-      Нет постов с этим хэштегом
+      Нет постов с хэштегом #{{ displayHashtag }}
     </div>
-    <div v-else class="posts-list">
+    <div v-else>
       <PostItem v-for="post in posts" :key="post.id" :post="post" />
+
+      <div v-if="hasMorePages" class="load-more">
+        <button @click="loadMore" class="load-more-btn">Загрузить еще</button>
+      </div>
     </div>
   </div>
 </template>
@@ -16,33 +24,7 @@
 import { ref, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import PostItem from "../components/PostItem.vue";
-
-const allPosts = [
-  {
-    id: 1,
-    content: "Привет всем! Это мой первый пост @testuser #первыйпост",
-    author: { username: "current_user" },
-    created_at: "2024-01-15T10:30:00Z",
-    mentions: ["testuser"],
-    hashtags: ["первыйпост"],
-  },
-  {
-    id: 2,
-    content: "Сегодня отличный день для программирования! #код #vue",
-    author: { username: "developer" },
-    created_at: "2024-01-15T09:15:00Z",
-    mentions: [],
-    hashtags: ["код", "vue"],
-  },
-  {
-    id: 3,
-    content: "Встречаемся в 18:00 @current_user #встреча",
-    author: { username: "organizer" },
-    created_at: "2024-01-15T08:45:00Z",
-    mentions: ["current_user"],
-    hashtags: ["встреча"],
-  },
-];
+import api from "../services/api";
 
 export default {
   components: { PostItem },
@@ -51,31 +33,58 @@ export default {
     const route = useRoute();
     const posts = ref([]);
     const loading = ref(true);
-    const currentHashtag = ref("");
+    const error = ref(null);
+    const displayHashtag = ref("");
+    const totalPosts = ref(0);
+    const currentPage = ref(1);
+    const lastPage = ref(1);
+    const hasMorePages = ref(false);
 
-    const loadPosts = () => {
+    const loadPosts = async (page = 1) => {
       const hashtag = props.hashtag || route.params.hashtag;
-      currentHashtag.value = hashtag;
+      displayHashtag.value = hashtag;
 
-      posts.value = allPosts.filter((post) =>
-        post.hashtags.some(
-          (tag) => tag.toLowerCase() === hashtag.toLowerCase(),
-        ),
-      );
+      loading.value = true;
+      error.value = null;
 
-      loading.value = false;
+      try {
+        const response = await api.getHashtagPosts(hashtag, page);
+
+        if (response && response.posts && response.posts.data) {
+          const newPosts = response.posts.data;
+          posts.value = page === 1 ? newPosts : [...posts.value, ...newPosts];
+          totalPosts.value = response.posts.total || newPosts.length;
+          currentPage.value = response.posts.current_page || page;
+          lastPage.value = response.posts.last_page || 1;
+        }
+
+        hasMorePages.value = currentPage.value < lastPage.value;
+      } catch (err) {
+        console.error("Ошибка загрузки постов:", err);
+        error.value = "Не удалось загрузить посты";
+      } finally {
+        loading.value = false;
+      }
+    };
+
+    const loadMore = () => {
+      if (hasMorePages.value) {
+        loadPosts(currentPage.value + 1);
+      }
     };
 
     watch(
       () => props.newPost,
       (post) => {
-        if (post && currentHashtag.value) {
-          const hasTag = post.hashtags.some(
-            (tag) => tag.toLowerCase() === currentHashtag.value.toLowerCase(),
+        if (post && displayHashtag.value) {
+          const hasTag = post.hashtags?.some(
+            (tag) =>
+              tag.name?.toLowerCase() === displayHashtag.value.toLowerCase(),
           );
 
-          if (hasTag && !posts.value.some((p) => p.id === post.id)) {
+          if (hasTag) {
             posts.value.unshift(post);
+            totalPosts.value++;
           }
         }
       },
@@ -83,28 +92,45 @@ export default {
 
     watch(
       () => props.hashtag || route.params.hashtag,
-      () => {
-        loading.value = true;
-        loadPosts();
-      },
+      () => loadPosts(1),
     );
 
-    onMounted(loadPosts);
+    onMounted(() => loadPosts(1));
 
     return {
       posts,
       loading,
-      hashtag: currentHashtag,
+      error,
+      displayHashtag,
+      totalPosts,
+      hasMorePages,
+      loadMore,
     };
   },
 };
 </script>
 
 <style scoped>
-.page-title {
+.hashtag-header {
+  background: white;
+  border: 1px solid #e1e8ed;
+  border-radius: 8px;
+  padding: 20px;
   margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.page-title {
   color: #14171a;
   font-size: 24px;
+  margin: 0;
+}
+
+.posts-count {
+  color: #657786;
+  font-size: 14px;
 }
 
 .status-message {
@@ -116,7 +142,29 @@ export default {
   border-radius: 8px;
 }
 
-.posts-list {
-  margin-top: 10px;
+.status-message.error {
+  color: #e0245e;
+  background: #ffebee;
+  border-color: #ffcdd2;
+}
+
+.load-more {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.load-more-btn {
+  background: white;
+  border: 1px solid #1da1f2;
+  color: #1da1f2;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.load-more-btn:hover {
+  background: #e8f5fe;
 }
 </style>

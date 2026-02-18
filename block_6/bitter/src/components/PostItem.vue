@@ -1,9 +1,12 @@
 <template>
   <div class="post">
     <div class="post-header">
-      <router-link :to="`/posts/${post.author.username}`" class="author">
-        @{{ post.author.username }}
-      </router-link>
+      <div class="post-author">
+        <router-link :to="`/posts/${post.user.username}`" class="author-link">
+          @{{ post.user.username }}
+        </router-link>
+        <span class="author-name">{{ post.user.name }}</span>
+      </div>
       <span class="time">{{ formatTime(post.created_at) }}</span>
     </div>
 
@@ -28,17 +31,54 @@
         <span v-else v-html="segment.value"></span>
       </template>
     </div>
+
+    <div v-if="showFollowButton" class="post-footer">
+      <button
+        @click="toggleFollow"
+        class="follow-btn"
+        :class="{ following: isFollowing }"
+        :disabled="followLoading"
+      >
+        {{ followLoading ? "..." : isFollowing ? "Отписаться" : "Подписаться" }}
+      </button>
+    </div>
   </div>
 </template>
 
 <script>
-import { computed } from "vue";
+import { ref, computed, onMounted } from "vue";
+import api from "../services/api";
 
 export default {
-  props: ["post"],
+  props: {
+    post: {
+      type: Object,
+      required: true,
+    },
+    showFollowButton: {
+      type: Boolean,
+      default: false,
+    },
+  },
   setup(props) {
+    const isFollowing = ref(false);
+    const followLoading = ref(false);
+
     const formatTime = (timestamp) => {
-      return new Date(timestamp).toLocaleString("ru-RU", {
+      const date = new Date(timestamp);
+      const now = new Date();
+      const diff = now - date;
+
+      if (diff < 60000) return "только что";
+      if (diff < 3600000) {
+        const minutes = Math.floor(diff / 60000);
+        return `${minutes} мин. назад`;
+      }
+      if (diff < 86400000) {
+        const hours = Math.floor(diff / 3600000);
+        return `${hours} ч. назад`;
+      }
+      return date.toLocaleString("ru-RU", {
         day: "2-digit",
         month: "2-digit",
         year: "numeric",
@@ -50,8 +90,6 @@ export default {
     const parsedContent = computed(() => {
       const segments = [];
       let remaining = props.post.content;
-
-      // ПРОСТОЕ РЕШЕНИЕ: @ или #, затем любые символы кроме пробела
       const regex = /(@[^\s]+|#[^\s]+)/g;
       let lastIndex = 0;
       let match;
@@ -92,9 +130,45 @@ export default {
       return segments;
     });
 
+    const checkFollowStatus = async () => {
+      if (!props.showFollowButton) return;
+
+      try {
+        const following = await api.getFollowing("current_user");
+        isFollowing.value = following.some(
+          (f) => f.username === props.post.user.username,
+        );
+      } catch (error) {
+        console.error("Ошибка проверки подписки:", error);
+      }
+    };
+
+    const toggleFollow = async () => {
+      followLoading.value = true;
+      try {
+        if (isFollowing.value) {
+          await api.unfollow(props.post.user.username);
+          isFollowing.value = false;
+        } else {
+          await api.follow(props.post.user.username);
+          isFollowing.value = true;
+        }
+      } catch (error) {
+        console.error("Ошибка при изменении подписки:", error);
+        alert("Не удалось изменить подписку. Попробуйте позже.");
+      } finally {
+        followLoading.value = false;
+      }
+    };
+
+    onMounted(checkFollowStatus);
+
     return {
       formatTime,
       parsedContent,
+      isFollowing,
+      followLoading,
+      toggleFollow,
     };
   },
 };
@@ -117,22 +191,35 @@ export default {
 .post-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   margin-bottom: 10px;
   font-size: 14px;
 }
 
-.author {
-  font-weight: bold;
-  color: #1da1f2;
-  cursor: pointer;
+.post-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.author:hover {
+.author-link {
+  font-weight: bold;
+  color: #1da1f2;
+  text-decoration: none;
+}
+
+.author-link:hover {
   text-decoration: underline;
+}
+
+.author-name {
+  color: #657786;
+  font-size: 13px;
 }
 
 .time {
   color: #657786;
+  font-size: 13px;
 }
 
 .post-content {
@@ -140,25 +227,56 @@ export default {
   white-space: pre-wrap;
   word-wrap: break-word;
   font-size: 15px;
+  margin-bottom: 10px;
 }
 
-/* Стили для ссылок внутри текста */
-::v-deep .mention-link {
+.mention-link {
   color: #1da1f2;
   font-weight: 500;
-  cursor: pointer;
+  text-decoration: none;
 }
 
-::v-deep .mention-link:hover {
+.mention-link:hover {
   text-decoration: underline;
 }
 
-::v-deep .hashtag-link {
+.hashtag-link {
   color: #1da1f2;
-  cursor: pointer;
+  text-decoration: none;
 }
 
-::v-deep .hashtag-link:hover {
+.hashtag-link:hover {
   text-decoration: underline;
+}
+
+.post-footer {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e1e8ed;
+}
+
+.follow-btn {
+  background: white;
+  color: #1da1f2;
+  border: 1px solid #1da1f2;
+  padding: 5px 15px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.follow-btn:hover {
+  background: #e8f5fe;
+}
+
+.follow-btn.following {
+  background: #1da1f2;
+  color: white;
+}
+
+.follow-btn.following:hover {
+  background: #0d8bf0;
 }
 </style>
