@@ -88,46 +88,20 @@ export default {
     };
 
     const parsedContent = computed(() => {
-      const segments = [];
-      let remaining = props.post.content;
-      const regex = /(@[^\s]+|#[^\s]+)/g;
-      let lastIndex = 0;
-      let match;
+      const text = props.post.content;
+      const parts = text.split(/(@[^\s]+|#[^\s]+)/g).filter(Boolean);
 
-      while ((match = regex.exec(remaining)) !== null) {
-        if (match.index > lastIndex) {
-          segments.push({
-            type: "text",
-            value: remaining
-              .substring(lastIndex, match.index)
-              .replace(/\n/g, "<br>"),
-          });
-        }
-
-        const fullMatch = match[0];
-        if (fullMatch.startsWith("@")) {
-          segments.push({
-            type: "mention",
-            value: fullMatch.substring(1),
-          });
-        } else if (fullMatch.startsWith("#")) {
-          segments.push({
-            type: "hashtag",
-            value: fullMatch.substring(1),
-          });
-        }
-
-        lastIndex = match.index + fullMatch.length;
-      }
-
-      if (lastIndex < remaining.length) {
-        segments.push({
-          type: "text",
-          value: remaining.substring(lastIndex).replace(/\n/g, "<br>"),
-        });
-      }
-
-      return segments;
+      return parts.map((part) => ({
+        type: part.startsWith("@")
+          ? "mention"
+          : part.startsWith("#")
+            ? "hashtag"
+            : "text",
+        value:
+          part.startsWith("@") || part.startsWith("#")
+            ? part.substring(1)
+            : part.replace(/\n/g, "<br>"),
+      }));
     });
 
     const checkFollowStatus = async () => {
