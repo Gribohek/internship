@@ -11,122 +11,158 @@ use Illuminate\Support\Facades\DB;
 
 class PostController extends Controller
 {
-
-    public function index(Request $request)
-    {
-        $user = User::find(1);
-        
-        $posts = Post::whereIn('user_id', function($query) use ($user) {
-            $query->select('following_id')
-                  ->from('follows')
-                  ->where('follower_id', $user->id);
-        })
-        ->orWhere('user_id', $user->id)
-        ->orWhereIn('id', function($query) use ($user) {
-            $query->select('post_id')
-                  ->from('mentions')
-                  ->where('mentioned_user_id', $user->id);
-        })
-        ->with(['user', 'hashtags', 'mentions'])
-        ->orderBy('created_at', 'desc')
+  public function index(Request $request)
+{
+    $user = $request->user() ?? User::findOrFail(1);
+    $posts = Post::feedForUser($user->id)
+        ->withFollowStatus($user->id)
+        ->with([
+            'user' => function ($q) {
+                $q->withCount(['followers', 'following']);
+            },
+            'hashtags',
+            'mentions'
+        ])
+        ->latest()
         ->paginate(20);
-
-        return response()->json($posts);
-    }
-
+    $posts->through(function ($post) {
+        $post->user->is_following = $post->is_following ?? false;
+        return $post;
+    });
+    return response()->json($posts);
+}
     public function store(Request $request)
     {
         $request->validate([
             'content' => 'required|string|max:280'
         ]);
-
-        $user = User::find(1);
-
+        $user = $request->user() ?? User::find(1);
         DB::beginTransaction();
-
         try {
             $post = Post::create([
                 'user_id' => $user->id,
                 'content' => $request->content
             ]);
-            preg_match_all('/#([\w\p{Cyrillic}]+)/u', $request->content, $hashtagMatches);
-            
-            foreach ($hashtagMatches[1] ?? [] as $tagName) {
-                $tagName = strtolower($tagName);
-                $hashtag = Hashtag::firstOrCreate(['name' => $tagName]);
-                $post->hashtags()->attach($hashtag->id);
-            }
-
-            preg_match_all('/@([\w\p{Cyrillic}]+)/u', $request->content, $mentionMatches);
-            
-            foreach ($mentionMatches[1] ?? [] as $username) {
-                $mentionedUser = User::where('username', $username)->first();
-                if ($mentionedUser) {
-                    DB::table('mentions')->insert([
-                        'post_id' => $post->id,
-                        'mentioned_user_id' => $mentionedUser->id,
-                        'created_at' => now(),
-                        'updated_at' => now()
-                    ]);
-                }
-            }
-
+            $this->syncHashtags($post, $request->content);
+            $this->syncMentions($post, $request->content);
             DB::commit();
+            $post->load(['user', 'hashtags', 'mentions']);
+            $post->user->is_following = false; 
+            $post->user->followers_count = $post->user->followers()->count();
+            $post->user->following_count = $post->user->following()->count();
 
-            return response()->json($post->load(['user', 'hashtags', 'mentions']), 201);
+            return response()->json($post, 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['message' => 'Ошибка при создании поста'], 500);
         }
     }
-
-  public function userPosts($username)
+ public function userPosts($username, Request $request)
 {
-    $user = User::where('username', $username)->first();
-    
-    if (!$user) {
-        return response()->json([
-            'message' => 'Пользователь не найден'
-        ], 404);
-    }
-    
+    $currentUser = $request->user() ?? User::findOrFail(1);
+
+    $user = User::where('username', $username)
+        ->withCount(['followers', 'following', 'posts'])
+        ->firstOrFail();
+
     $posts = Post::where('user_id', $user->id)
-        ->orWhereIn('id', function($query) use ($user) {
-            $query->select('post_id')
-                  ->from('mentions')
-                  ->where('mentioned_user_id', $user->id);
-        })
-        ->with(['user', 'hashtags'])
-        ->orderBy('created_at', 'desc')
+        ->orWhereHas('mentions', fn($q) =>
+            $q->where('mentioned_user_id', $user->id)
+        )
+        ->with([
+            'user' => fn($q) => $q->withCount(['followers', 'following']),
+            'hashtags',
+            'mentions'
+        ])
+        ->latest()
         ->get();
-    
+    $followingIds = DB::table('follows')
+        ->where('follower_id', $currentUser->id)
+        ->pluck('following_id')
+        ->toArray();
+
+    foreach ($posts as $post) {
+        $post->user->is_following = in_array($post->user_id, $followingIds);
+    }
+
+    $isFollowing = in_array($user->id, $followingIds);
 
     return response()->json([
-        'user' => $user,
+        'user' => [
+            'id' => $user->id,
+            'username' => $user->username,
+            'name' => $user->name,
+            'is_following' => $isFollowing,
+            'followers_count' => $user->followers_count,
+            'following_count' => $user->following_count,
+            'posts_count' => $user->posts_count
+        ],
         'posts' => $posts
     ]);
 }
 
-    public function hashtagPosts($hashtag)
-{
-    $hashtagModel = Hashtag::where('name', strtolower($hashtag))->first();
-    
-    if (!$hashtagModel) {
-        return response()->json([
-            'message' => 'Хэштег не найден'
-        ], 404);
-    }
-    
-    $posts = $hashtagModel->posts()
-        ->with(['user', 'hashtags', 'mentions'])
-        ->orderBy('created_at', 'desc')
-        ->paginate(20);
+    public function hashtagPosts($hashtag, Request $request)
+    {
+        $currentUser = $request->user() ?? User::find(1);
+        $hashtagModel = Hashtag::where('name', strtolower($hashtag))->firstOrFail();
+        
+        $posts = $hashtagModel->posts()
+            ->withFollowStatus($currentUser->id)
+            ->with(['user', 'hashtags', 'mentions'])
+            ->orderBy('created_at', 'desc')
+            ->paginate(20);
 
-    
-    return response()->json([
-        'hashtag' => $hashtagModel,
-        'posts' => $posts
-    ]);
-}    
+
+        $posts->through(function($post) use ($currentUser) {
+            $post->user->is_following = $post->is_following ?? false;
+            return $post;
+        });
+
+        return response()->json([
+            'hashtag' => $hashtagModel,
+            'posts' => $posts
+        ]);
+    }
+private function syncHashtags(Post $post, string $content): void
+{
+    preg_match_all('/#([\w\p{Cyrillic}]+)/u', $content, $matches);
+
+    $tagNames = collect($matches[1] ?? [])
+        ->map(fn($tag) => strtolower($tag))
+        ->unique()
+        ->values();
+
+    if ($tagNames->isEmpty()) {
+        return;
+    }
+    $existing = Hashtag::whereIn('name', $tagNames)->get()->keyBy('name');
+
+    $newTags = $tagNames->diff($existing->keys());
+
+    if ($newTags->isNotEmpty()) {
+        $insertData = $newTags->map(fn($name) => ['name' => $name])->toArray();
+        Hashtag::insert($insertData);
+
+        $existing = Hashtag::whereIn('name', $tagNames)->get()->keyBy('name');
+    }
+
+    $post->hashtags()->sync($existing->pluck('id'));
+}
+
+   private function syncMentions(Post $post, string $content): void
+{
+    preg_match_all('/@([\w\p{Cyrillic}]+)/u', $content, $matches);
+    $usernames = collect($matches[1] ?? [])
+        ->unique()
+        ->values();
+    if ($usernames->isEmpty()) {
+        return;
+    }
+    $users = User::whereIn('username', $usernames)
+        ->where('id', '!=', $post->user_id)
+        ->pluck('id');
+    $post->mentions()->sync($users);
+}
+
 }
