@@ -54,9 +54,4 @@ export default {
     const response = await api.post(`/users/${username}/unfollow`);
     return response.data;
   },
-
-  async getFollowing(username) {
-    const response = await api.get(`/users/${username}/following`);
-    return response.data.data || response.data;
-  },
 };

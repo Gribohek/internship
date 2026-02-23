@@ -36,17 +36,20 @@
       <button
         @click="toggleFollow"
         class="follow-btn"
-        :class="{ following: isFollowing }"
+        :class="{ following: post.user.is_following }"
         :disabled="followLoading"
       >
-        {{ followLoading ? "..." : isFollowing ? "Отписаться" : "Подписаться" }}
+        <span v-if="followLoading" class="spinner"></span>
+        <template v-else>
+          {{ post.user.is_following ? "Отписаться" : "Подписаться" }}
+        </template>
       </button>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed } from "vue";
 import api from "../services/api";
 
 export default {
@@ -61,7 +64,6 @@ export default {
     },
   },
   setup(props) {
-    const isFollowing = ref(false);
     const followLoading = ref(false);
 
     const formatTime = (timestamp) => {
@@ -104,28 +106,21 @@ export default {
       }));
     });
 
-    const checkFollowStatus = async () => {
-      if (!props.showFollowButton) return;
-
-      try {
-        const following = await api.getFollowing("current_user");
-        isFollowing.value = following.some(
-          (f) => f.username === props.post.user.username,
-        );
-      } catch (error) {
-        console.error("Ошибка проверки подписки:", error);
-      }
-    };
-
     const toggleFollow = async () => {
       followLoading.value = true;
       try {
-        if (isFollowing.value) {
+        if (props.post.user.is_following) {
           await api.unfollow(props.post.user.username);
-          isFollowing.value = false;
+          props.post.user.is_following = false;
+          props.post.user.followers_count = Math.max(
+            0,
+            (props.post.user.followers_count || 0) - 1,
+          );
         } else {
           await api.follow(props.post.user.username);
-          isFollowing.value = true;
+          props.post.user.is_following = true;
+          props.post.user.followers_count =
+            (props.post.user.followers_count || 0) + 1;
         }
       } catch (error) {
         console.error("Ошибка при изменении подписки:", error);
@@ -135,12 +130,9 @@ export default {
       }
     };
 
-    onMounted(checkFollowStatus);
-
     return {
       formatTime,
       parsedContent,
-      isFollowing,
       followLoading,
       toggleFollow,
     };
@@ -239,9 +231,10 @@ export default {
   font-weight: bold;
   cursor: pointer;
   transition: all 0.2s;
+  min-width: 100px;
 }
 
-.follow-btn:hover {
+.follow-btn:hover:not(:disabled) {
   background: #e8f5fe;
 }
 
@@ -250,7 +243,33 @@ export default {
   color: white;
 }
 
-.follow-btn.following:hover {
+.follow-btn.following:hover:not(:disabled) {
   background: #0d8bf0;
+}
+
+.follow-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(29, 161, 242, 0.3);
+  border-radius: 50%;
+  border-top-color: #1da1f2;
+  animation: spin 1s ease-in-out infinite;
+}
+
+.following .spinner {
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
